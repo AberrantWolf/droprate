@@ -1,7 +1,15 @@
 [package]
 name = "droprate"
-version = "0.1.0"
-authors = ["Scott Harper <orcein@gmail.com>"]
+version = "1.0.0"
+authors = ["AberrantWolf"]
 edition = "2018"
+license = "MIT"
+description = "A library for generating different kinds of randomized trials given a set of options and weights."
+repository = "https://github.com/AberrantWolf/droprate"
+readme = "README.md"
+
+[badges]
+maintenance = { statuse = "actively-developed"}
 
 [dependencies]
+rand = "0.7.0"
