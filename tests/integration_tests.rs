@@ -1,8 +1,11 @@
 use droprate::{FairlyRandomTable, ProbabilityTable, RandomTable};
 
-use std::collections::HashMap;
+extern crate rand;
 
-fn gen_string_table() -> RandomTable<String> {
+use std::collections::HashMap;
+use rand::prelude::*;
+
+fn gen_string_table() -> RandomTable<String, ThreadRng> {
     let outcomes: HashMap<String, f64> = [
         (String::from("first"), 1f64),
         (String::from("second"), 1f64),
@@ -11,10 +14,10 @@ fn gen_string_table() -> RandomTable<String> {
     .iter()
     .cloned()
     .collect();
-    RandomTable::from_map(outcomes)
+    RandomTable::from_map(outcomes, ThreadRng::default())
 }
 
-fn gen_fairly_random_string_table() -> FairlyRandomTable<String> {
+fn gen_fairly_random_string_table() -> FairlyRandomTable<String, ThreadRng> {
     let outcomes: HashMap<String, f64> = [
         (String::from("first"), 1f64),
         (String::from("second"), 1f64),
@@ -23,12 +26,12 @@ fn gen_fairly_random_string_table() -> FairlyRandomTable<String> {
     .iter()
     .cloned()
     .collect();
-    FairlyRandomTable::from_map(outcomes)
+    FairlyRandomTable::from_map(outcomes, ThreadRng::default())
 }
 
 #[test]
 fn empty_table() {
-    let table = RandomTable::<String>::new();
+    let table = RandomTable::<String, ThreadRng>::new(ThreadRng::default());
     assert_eq!(table.count(), 0);
 }
 
@@ -43,7 +46,7 @@ fn populated_table() {
     .cloned()
     .collect();
 
-    let mut table = RandomTable::from_map(outcomes);
+    let mut table = RandomTable::from_map(outcomes, ThreadRng::default());
     assert_eq!(table.count(), 3);
 
     let fail_string = String::from("fail");
@@ -67,7 +70,7 @@ fn seems_always_valid() {
 // TODO: report longest distance between two items of the same
 // TODO: report longest streak of same items in a row
 
-fn random_odds(table: &mut ProbabilityTable<String>, num_cycles: u32) {
+fn random_odds(table: &mut ProbabilityTable<String, ThreadRng>, num_cycles: u32) {
     let keys = table.keys();
     let mut stats = HashMap::<&String, u64>::new();
 

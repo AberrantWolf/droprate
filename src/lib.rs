@@ -12,8 +12,9 @@
 use std::collections::HashMap;
 
 extern crate rand;
+use rand::Rng;
 
-pub trait ProbabilityTable<T> {
+pub trait ProbabilityTable<T, R> {
     /// Add an option to the random table with the assigned weight value.
     /// 
     /// You can chain multiple `push(...)` calls together to save a little space.
@@ -36,15 +37,16 @@ pub trait ProbabilityTable<T> {
     /// 
     /// ```
     /// use droprate::{RandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
     /// 
-    /// let mut table = RandomTable::<&'static str>::new();
+    /// let mut table = RandomTable::<&'static str, ThreadRng>::new(ThreadRng::default());
     /// table.push("First option", 1f64)  // 1/4 = 25% chance
     ///      .push("Second option", 1f64) // 1/4 = 25% chance
     ///      .push("Third option", 2f64); // 2/4 = 50% chance
     /// 
     /// assert_eq!(3, table.count());
     /// ```
-    fn push(&mut self, ident: T, weight: f64) -> &mut ProbabilityTable<T>;
+    fn push(&mut self, ident: T, weight: f64) -> &mut dyn ProbabilityTable<T, R>;
 
     /// Get the number of possible items in the table.
     /// 
@@ -52,8 +54,9 @@ pub trait ProbabilityTable<T> {
     /// 
     /// ```
     /// use droprate::{RandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
     /// 
-    /// let mut table = RandomTable::<&'static str>::new();
+    /// let mut table = RandomTable::<&'static str, ThreadRng>::new(ThreadRng::default());
     /// table.push("First option", 1f64);
     /// assert_eq!(1, table.count());
     /// 
@@ -70,8 +73,9 @@ pub trait ProbabilityTable<T> {
     /// 
     /// ```
     /// use droprate::{RandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
     /// 
-    /// let mut table = RandomTable::<&'static str>::new();
+    /// let mut table = RandomTable::<&'static str, ThreadRng>::new(ThreadRng::default());
     /// table.push("A", 1f64)
     ///      .push("B", 1f64);
     /// 
@@ -95,8 +99,9 @@ pub trait ProbabilityTable<T> {
     /// 
     /// ```
     /// use droprate::{RandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
     /// 
-    /// let mut table = RandomTable::<&'static str>::new();
+    /// let mut table = RandomTable::<&'static str, ThreadRng>::new(ThreadRng::default());
     /// assert_eq!(true, table.random().is_err());
     /// 
     /// table.push("A", 1f64)
@@ -105,6 +110,8 @@ pub trait ProbabilityTable<T> {
     /// assert_eq!(false, table.random().is_err());
     /// ```
     fn random(&mut self) -> Result<T, String>;
+
+    //fn set_generator(rng: R);
 }
 
 /// `RandomTable` represents a table of options and their relative weights. The
@@ -118,9 +125,98 @@ pub trait ProbabilityTable<T> {
 /// 
 /// This kind of random is useful, but it's also hard for users to understand
 /// and can often lead to outcomes which (in games, at least) feel unfair.
-pub struct RandomTable<T> {
+pub struct RandomTable<T, R> {
     pub(crate) table: HashMap<T, f64>,
     pub(crate) total: f64,
+    pub(crate) rng: R,
+}
+
+// RandomTable
+impl<T: std::cmp::Eq + std::hash::Hash, R: Rng> RandomTable<T, R> {
+    /// Create a new instance of `RandomTable` with no options.
+    pub fn new(rng: R) -> RandomTable<T, R> {
+        RandomTable {
+            table: HashMap::new(),
+            total: 0f64,
+            rng,
+        }
+    }
+
+    /// Create a new `RandomTable` from a [`HashMap`].
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use droprate::{RandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
+    /// use std::collections::HashMap;
+    /// 
+    /// let map: HashMap<&'static str, f64> =
+    ///     [("A", 1f64),
+    ///     ("B", 1f64),
+    ///     ("C", 3f64)]
+    ///     .iter().cloned().collect();
+    /// 
+    /// let mut table = RandomTable::<&'static str, ThreadRng>::from_map(map, ThreadRng::default());
+    /// 
+    /// assert_eq!(3, table.count());
+    /// ```
+    /// 
+    /// ```
+    /// use droprate::{RandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
+    /// use std::collections::HashMap;
+    /// 
+    /// let mut map = HashMap::new();
+    /// map.insert("A", 1f64);
+    /// map.insert("B", 1f64);
+    /// map.insert("C", 3f64);
+    /// 
+    /// let mut table = RandomTable::<&'static str, ThreadRng>::from_map(map, ThreadRng::default());
+    /// 
+    /// assert_eq!(3, table.count());
+    /// ```
+    pub fn from_map(in_table: HashMap<T, f64>, rng: R) -> RandomTable<T, R> {
+        let mut total = 0f64;
+        for entry in &in_table {
+            total += entry.1
+        }
+
+        RandomTable {
+            table: in_table,
+            total: total,
+            rng,
+        }
+    }
+}
+
+impl<T: std::cmp::Eq + std::hash::Hash + Clone, R: Rng> ProbabilityTable<T, R> for RandomTable<T, R> {
+    fn push(&mut self, ident: T, weight: f64) -> &mut dyn ProbabilityTable<T, R> {
+        self.table.insert(ident, weight);
+        self.total += weight;
+        self
+    }
+
+    fn count(&self) -> usize {
+        self.table.len()
+    }
+
+    fn keys(&self) -> Vec<T> {
+        self.table.keys().cloned().collect()
+    }
+
+    fn random(&mut self) -> Result<T, String> {
+        let r = self.rng.gen::<f64>() * self.total;
+        let mut comp = r;
+        for pair in &self.table {
+            if *pair.1 > comp {
+                return Ok(pair.0.clone());
+            }
+            comp -= pair.1;
+        }
+
+        Err("Generated random outside of possible range".to_owned())
+    }
 }
 
 /// `FairlyRandomTable` aims to create results which a human might create when
@@ -144,104 +240,20 @@ pub struct RandomTable<T> {
 /// dramatically (however it's not impossible to get multiple results in a row --
 /// in fact, allowing for multiple results in a row of even unlikely options is
 /// a design goal; you just won't seem them as frequently).
-pub struct FairlyRandomTable<T> {
-    pub(crate) base: RandomTable<T>,
+pub struct FairlyRandomTable<T, R> {
+    pub(crate) base: RandomTable<T, R>,
     pub(crate) table: HashMap<T, f64>,
     pub(crate) total: f64,
-}
-
-// RandomTable
-impl<T: std::cmp::Eq + std::hash::Hash> RandomTable<T> {
-    /// Create a new instance of `RandomTable` with no options.
-    pub fn new() -> RandomTable<T> {
-        RandomTable {
-            table: HashMap::new(),
-            total: 0f64,
-        }
-    }
-
-    /// Create a new `RandomTable` from a [`HashMap`].
-    /// 
-    /// # Examples
-    /// 
-    /// ```
-    /// use droprate::{RandomTable, ProbabilityTable};
-    /// use std::collections::HashMap;
-    /// 
-    /// let map: HashMap<&'static str, f64> =
-    ///     [("A", 1f64),
-    ///     ("B", 1f64),
-    ///     ("C", 3f64)]
-    ///     .iter().cloned().collect();
-    /// 
-    /// let mut table = RandomTable::<&'static str>::from_map(map);
-    /// 
-    /// assert_eq!(3, table.count());
-    /// ```
-    /// 
-    /// ```
-    /// use droprate::{RandomTable, ProbabilityTable};
-    /// use std::collections::HashMap;
-    /// 
-    /// let mut map = HashMap::new();
-    /// map.insert("A", 1f64);
-    /// map.insert("B", 1f64);
-    /// map.insert("C", 3f64);
-    /// 
-    /// let mut table = RandomTable::<&'static str>::from_map(map);
-    /// 
-    /// assert_eq!(3, table.count());
-    /// ```
-    pub fn from_map(in_table: HashMap<T, f64>) -> RandomTable<T> {
-        let mut total = 0f64;
-        for entry in &in_table {
-            total += entry.1
-        }
-
-        RandomTable {
-            table: in_table,
-            total: total,
-        }
-    }
-}
-
-impl<T: std::cmp::Eq + std::hash::Hash + Clone> ProbabilityTable<T> for RandomTable<T> {
-    fn push(&mut self, ident: T, weight: f64) -> &mut ProbabilityTable<T> {
-        self.table.insert(ident, weight);
-        self.total += weight;
-        self
-    }
-
-    fn count(&self) -> usize {
-        self.table.len()
-    }
-
-    fn keys(&self) -> Vec<T> {
-        self.table.keys().cloned().collect()
-    }
-
-    fn random(&mut self) -> Result<T, String> {
-        let r = rand::random::<f64>() * self.total;
-        let mut comp = r;
-        for pair in &self.table {
-            if *pair.1 > comp {
-                return Ok(pair.0.clone());
-            }
-            comp -= pair.1;
-        }
-
-        Err("Generated random outside of possible range".to_owned())
-    }
 }
 
 //
 // FairlyRandomTable
 //
-impl<T: std::cmp::Eq + std::hash::Hash + Clone> FairlyRandomTable<T> {
+impl<T: std::cmp::Eq + std::hash::Hash + Clone, R: Rng> FairlyRandomTable<T, R> {
     /// Create a new instance of `FairlyRandomTable` with no options.
-    pub fn new() -> FairlyRandomTable<T> {
+    pub fn new(rng: R) -> FairlyRandomTable<T, R> {
         FairlyRandomTable {
-            base: RandomTable::new(),
+            base: RandomTable::new(rng),
             table: HashMap::new(),
             total: 0f64,
         }
@@ -253,6 +265,7 @@ impl<T: std::cmp::Eq + std::hash::Hash + Clone> FairlyRandomTable<T> {
     /// 
     /// ```
     /// use droprate::{FairlyRandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
     /// use std::collections::HashMap;
     /// 
     /// let map: HashMap<&'static str, f64> =
@@ -261,13 +274,14 @@ impl<T: std::cmp::Eq + std::hash::Hash + Clone> FairlyRandomTable<T> {
     ///     ("C", 3f64)]
     ///     .iter().cloned().collect();
     /// 
-    /// let mut table = FairlyRandomTable::<&'static str>::from_map(map);
+    /// let mut table = FairlyRandomTable::<&'static str, ThreadRng>::from_map(map, ThreadRng::default());
     /// 
     /// assert_eq!(3, table.count());
     /// ```
     /// 
     /// ```
     /// use droprate::{FairlyRandomTable, ProbabilityTable};
+    /// use rand::prelude::*;
     /// use std::collections::HashMap;
     /// 
     /// let mut map = HashMap::new();
@@ -275,18 +289,18 @@ impl<T: std::cmp::Eq + std::hash::Hash + Clone> FairlyRandomTable<T> {
     /// map.insert("B", 1f64);
     /// map.insert("C", 3f64);
     /// 
-    /// let mut table = FairlyRandomTable::<&'static str>::from_map(map);
+    /// let mut table = FairlyRandomTable::<&'static str, ThreadRng>::from_map(map, ThreadRng::default());
     /// 
     /// assert_eq!(3, table.count());
     /// ```
-    pub fn from_map(in_table: HashMap<T, f64>) -> FairlyRandomTable<T> {
+    pub fn from_map(in_table: HashMap<T, f64>, rng: R) -> FairlyRandomTable<T, R> {
         let mut total = 0f64;
         for entry in &in_table {
             total += entry.1
         }
 
         FairlyRandomTable {
-            base: RandomTable::from_map(in_table.clone()),
+            base: RandomTable::from_map(in_table.clone(), rng),
             table: in_table,
             total: total,
         }
@@ -329,8 +343,8 @@ impl<T: std::cmp::Eq + std::hash::Hash + Clone> FairlyRandomTable<T> {
     }
 }
 
-impl<T: std::cmp::Eq + std::hash::Hash + Clone> ProbabilityTable<T> for FairlyRandomTable<T> {
-    fn push(&mut self, ident: T, weight: f64) -> &mut ProbabilityTable<T> {
+impl<T: std::cmp::Eq + std::hash::Hash + Clone, R: Rng> ProbabilityTable<T, R> for FairlyRandomTable<T, R> {
+    fn push(&mut self, ident: T, weight: f64) -> &mut dyn ProbabilityTable<T, R> {
         self.base.push(ident.clone(), weight);
         self.table.insert(ident, weight);
         self.total += weight;
