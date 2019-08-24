@@ -2,8 +2,8 @@ use droprate::{FairlyRandomTable, ProbabilityTable, RandomTable};
 
 extern crate rand;
 
-use std::collections::HashMap;
 use rand::prelude::*;
+use std::collections::HashMap;
 
 fn gen_string_table() -> RandomTable<String, ThreadRng> {
     let outcomes: HashMap<String, f64> = [
